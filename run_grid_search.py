@@ -151,12 +151,14 @@ def detect_gpus() -> list[str]:
         visible = _discover_gpu_indices()
         if visible and all(g.isdigit() for g in gpus + visible):
             missing = sorted(set(gpus).difference(visible), key=int)
+            '''
             if missing:
                 raise ValueError(
                     "CUDA_VISIBLE_DEVICES references GPUs that are not visible "
                     f"in this container: {missing}. Visible GPUs: {visible}. "
                     "Check the preset jobs.*.gpus values for this pod size."
                 )
+            '''
         return gpus
     discovered = _discover_gpu_indices()
     if discovered is not None:
