@@ -237,6 +237,7 @@ _DYNAMIC_ATTRS = [
     "flexibility_prior",
     "asynchronous_diffusion_parameter",
     "asynchronous_diffusion_bound",
+    "asynchronous_diffusion_shutoff",
 ]
 
 
@@ -277,6 +278,7 @@ class GuidanceConfig:
     flexibility_prior: list[float] | None = None  # TODO: remove
     asynchronous_diffusion_parameter: list[str] | None = None
     asynchronous_diffusion_bound: float | None = None
+    asynchronous_diffusion_shutoff: bool = False
 
     # DO NOT remove the **kwargs, it is for compatibility with argparse.
     def add_argument(self, name: str, default: Any = None, **kwargs):
@@ -417,6 +419,7 @@ class GuidanceConfig:
             flexibility_prior=resolve_flexibility_prior_arg(args.flexibility_prior),
             asynchronous_diffusion_parameter=args.asynchronous_diffusion_parameter,
             asynchronous_diffusion_bound=args.asynchronous_diffusion_bound,
+            asynchronous_diffusion_shutoff=args.asynchronous_diffusion_shutoff
         )
 
         # __post_init__ already set defaults for model/guidance-specific
@@ -795,9 +798,14 @@ def add_generic_args(parser: argparse.ArgumentParser | GuidanceConfig):
         "--asynchronous-diffusion-bound",
         type=float,
         default=0.0,
-        help="Bound on how de-synced asynchronous_diffusion_parameter is from its normal value. "
-        "Parameter value for residue with a prior of 0/1 : normal parameter value is bound by "
-        "1 +/- asynchronous_diffusion_bound."
+        help="Bound on how de-synced asynchronous_diffusion_parameter can be from normal value, "
+        "i.e. asynchronous_diffusion_parameter value for residue with prior of 1."
+    )
+    parser.add_argument(
+        "--asynchronous-diffusion-shutoff",
+        action="store_true",
+        help="Whether asynchronous_diffusion_parameter should be restored to its default value "
+        "after churn shutoff. "
     )
 
 
@@ -1012,6 +1020,7 @@ class JobConfig:
     flexibility_prior: list[float] | None = None  # TODO: remove
     asynchronous_diffusion_parameter: list[str] | None = None
     asynchronous_diffusion_bound: float | None = None
+    asynchronous_diffusion_shutoff: bool = False
 
 
 @dataclass

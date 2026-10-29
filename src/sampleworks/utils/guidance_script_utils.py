@@ -755,6 +755,7 @@ def _run_guidance(args: GuidanceConfig, guidance_type: str, model_wrapper, devic
         flexibility_prior=args.flexibility_prior,
         asynchronous_diffusion_parameter=args.asynchronous_diffusion_parameter,
         asynchronous_diffusion_bound=args.asynchronous_diffusion_bound,
+        asynchronous_diffusion_shutoff=args.asynchronous_diffusion_shutoff,
         **edm_sampler_kwargs,
     )
     sampler = AF3EDMSampler(
