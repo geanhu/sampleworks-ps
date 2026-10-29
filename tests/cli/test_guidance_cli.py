@@ -495,6 +495,17 @@ class TestArgPassthrough:
         config = GuidanceConfig.from_cli(argv)
         assert config.num_diffusion_steps == 200
 
+    def test_asynchronous_diffusion(self):
+        argv = [
+            "--model", "boltz1",
+            "--guidance-type", "pure_guidance",
+            # arguments being tested
+            "--asynchronous-diffusion-parameter", "noise_scale",
+            "--asynchronous-diffusion-bound", "0.05"
+        ] + COMMON_ARGS
+        config = GuidanceConfig.from_cli(argv)
+        assert config.asynchronous_diffusion_parameter == ['noise_scale']
+        assert config.asynchronous_diffusion_bound == 0.05
 
 class TestValidationEdgeCases:
     """Additional validation edge cases."""

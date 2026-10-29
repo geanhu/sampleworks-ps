@@ -108,6 +108,18 @@ class EDMSamplerConfig:
         of the diffusion denoising update.
     device
         Torch device for schedule tensor allocation.
+    flexibility_prior
+        Position-wise prior for residue flexibility provided as a .txt file with the prior value
+        for each residue on a new line. Must have the same number of values (lines) as residues in
+        the provided sequence. Value should be normalized on 0-1 scale, with higher values
+        indicating greater flexibility. 0.5 will lead to recovering the original 
+        asynchronous_diffusion_parameter value.
+    asynchronous_diffusion_parameter
+        Parameter(s) that the position-wise flexibility prior should be applied to.
+    asynchronous_diffusion_bound
+        Bound on how de-synced asynchronous_diffusion_parameter is from its normal value.
+        Parameter value for residue with a prior of 0/1 : normal parameter value is bound by
+        1 +/- asynchronous_diffusion_bound.
     """
 
     sigma_data: float = 16.0
@@ -123,6 +135,9 @@ class EDMSamplerConfig:
     alignment_reverse_diffusion: bool = False
     scale_guidance_to_diffusion: bool = True
     device: str | torch.device = "cpu"
+    flexibility_prior: list[float] | None = None
+    asynchronous_diffusion_parameter: list[str] | None = None
+    asynchronous_diffusion_bound: float | None = 0.0
 
     def __post_init__(self) -> None:
         if self.p == 0:
@@ -133,6 +148,12 @@ class EDMSamplerConfig:
             raise ValueError(f"s_min ({self.s_min}) must be less than s_max ({self.s_max})")
         if self.sigma_data <= 0:
             raise ValueError(f"sigma_data ({self.sigma_data}) must be positive")
+        if self.asynchronous_diffusion_bound:
+            if not 0 <= self.asynchronous_diffusion_bound <= 1:
+                raise ValueError(
+                    f"asynchronous_diffusion_bound ({self.asynchronous_diffusion_bound}) "
+                    "must be in [0,1]"
+                )
 
 
 class AF3EDMSampler:
