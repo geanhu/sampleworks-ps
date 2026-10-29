@@ -14,7 +14,7 @@ from sampleworks.core.losses.config import LOSS_OPTIONS_KEY, LossConfig
 from sampleworks.core.losses.options import option_type
 from sampleworks.core.losses.registry import get_loss_spec, loss_type_names
 from sampleworks.utils.guidance_constants import GuidanceType, Losses, StructurePredictor
-from sampleworks.utils.sequence import resolve_sequence_arg
+from sampleworks.utils.sequence import resolve_flexibility_prior_arg, resolve_sequence_arg
 
 
 # Loss used when a run does not say which one it wants. Keeps every command
@@ -233,6 +233,10 @@ _DYNAMIC_ATTRS = [
     "ensemble_size",
     "recycling_steps",
     "num_diffusion_steps",
+    # TODO: remove
+    "flexibility_prior",
+    "asynchronous_diffusion_parameter",
+    "asynchronous_diffusion_bound",
 ]
 
 
@@ -270,6 +274,9 @@ class GuidanceConfig:
     # in from the density fields below, which is how grid search builds configs.
     loss_config: dict[str, Any] = field(default_factory=dict)
     sequence: str | None = None
+    flexibility_prior: list[float] | None = None  # TODO: remove
+    asynchronous_diffusion_parameter: list[str] | None = None
+    asynchronous_diffusion_bound: float | None = None
 
     # DO NOT remove the **kwargs, it is for compatibility with argparse.
     def add_argument(self, name: str, default: Any = None, **kwargs):
@@ -407,6 +414,9 @@ class GuidanceConfig:
             alignment_reverse_diffusion=args.alignment_reverse_diffusion,
             loss_config=loss_config.to_mapping(),
             sequence=resolve_sequence_arg(args.sequence),
+            flexibility_prior=resolve_flexibility_prior_arg(args.flexibility_prior),
+            asynchronous_diffusion_parameter=args.asynchronous_diffusion_parameter,
+            asynchronous_diffusion_bound=args.asynchronous_diffusion_bound,
         )
 
         # __post_init__ already set defaults for model/guidance-specific
@@ -762,6 +772,34 @@ def add_generic_args(parser: argparse.ArgumentParser | GuidanceConfig):
         help="Number of diffusion denoising steps (default: 200)",
     )
 
+    # For asynchronous diffusion
+    # TODO: calculate internally instead of providing from external source
+    parser.add_argument(
+        "--flexibility-prior",
+        type=str,
+        default=None,
+        help="Position-wise prior for residue flexibility provided as a .txt file with the prior "
+        "value for each residue on a new line. Must have the same number of values (lines) as "
+        "residues in the provided sequence. Value should be normalized on 0-1 scale, with higher "
+        "values indicating greater flexibility.",
+    )
+    parser.add_argument(
+        "--asynchronous-diffusion-parameter",
+        type=str,
+        choices=["noise_scale", "step_scale", "guidance_weight"],
+        nargs="+",
+        default=None,
+        help="Parameter that the position-wise flexibility prior should be applied to.",
+    )
+    parser.add_argument(
+        "--asynchronous-diffusion-bound",
+        type=float,
+        default=0.0,
+        help="Bound on how de-synced asynchronous_diffusion_parameter is from its normal value. "
+        "Parameter value for residue with a prior of 0/1 : normal parameter value is bound by "
+        "1 +/- asynchronous_diffusion_bound."
+    )
+
 
 ######################
 # Guidance type specific arguments
@@ -971,6 +1009,9 @@ class JobConfig:
     output_dir: str
     log_path: str
     sequence: str | None = None
+    flexibility_prior: list[float] | None = None  # TODO: remove
+    asynchronous_diffusion_parameter: list[str] | None = None
+    asynchronous_diffusion_bound: float | None = None
 
 
 @dataclass

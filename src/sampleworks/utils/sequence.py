@@ -339,3 +339,105 @@ def apply_sequence_override(structure: dict[str, Any], sequence: str | None) -> 
     updated_arr.set_annotation("seq_idx", seq_idx)
 
     return {**structure, "chain_info": updated_chain_info, "asym_unit": updated_arr}
+
+
+# TODO: remove / move
+def resolve_flexibility_prior_arg(value: str | os.PathLike[str] | None) -> list[float] | None:
+    """Resolve per-residue flexibility prior from text file input.
+
+    Parameters
+    ----------
+    value : str or os.PathLike or None
+        Path to a plain text file (.txt) with one float value for the flexibility prior for
+        a residue on each line.
+
+    Returns
+    -------
+    list[float] or None
+        List of flexibility prior values, or ``None`` when *value* is empty.
+
+    Raises
+    ------
+    ValueError
+        If file is not formatted with one float value between 0-1 on each line.
+    """
+    if value is None:
+        return None
+
+    sequence = os.fspath(value).strip()
+    if not sequence:
+        return None
+
+    path = Path(sequence).expanduser()
+    if path.suffix == ".txt":
+        flexibility_prior = []  # store parsed values
+
+        with open(path, "r") as file:
+            # iterate through each line
+            for idx, line in enumerate(file):
+                line = line.rstrip()
+
+                # convert to float
+                try:
+                    line_value = float(line)
+                except ValueError as e:
+                    # expect ONE number per line
+                    raise ValueError(
+                        f"Flexibility prior received {line} on line {idx} that is not single number"
+                    ) from e
+
+                # validate normalized value
+                if not 0 <= line_value <= 1 or line == "nan":
+                    raise ValueError(
+                        "Flexibility prior received input not between 0-1. Make sure to normalize "
+                        "inputs with larger values representing more flexibility"
+                    )
+
+                flexibility_prior.append(line_value)
+
+        return flexibility_prior
+    else:
+        raise ValueError(".txt file expected for flexibility prior input")
+
+
+def validate_flexibility_prior(structure: dict[str, Any], flexibility_prior: list[float]):
+    """Validates that length of flexibility prior matches length of
+    all residues in input protein chain(s), after sequence override.
+
+    Parameters
+    ----------
+    structure: dict[str, Any]
+        Atomworks-parsed structure containing a ``chain_info`` mapping.
+    flexibility_prior: list[float]
+        List of per-residue flexibility prior values.
+
+    Raises
+    ------
+    ValueError
+        If length of flexibility_prior != combined length of all protein chains
+        in structure.
+    """
+    # Get protein chain info
+    chain_info = structure.get("chain_info")
+    # Validate annotations exist (in case there was no sequence override)
+    if not chain_info:
+        raise ValueError("Using flexibility prior structure chain_info")
+    protein_chain_ids = [
+        chain_id for chain_id, info in chain_info.items() if info["chain_type"].is_protein()
+    ]
+    if not protein_chain_ids:
+        raise ValueError("Using flexibility prior at least one protein chain")
+
+    # Iterate through each chain
+    total_length = sum(
+        len(chain_info[protein_chain_id]["processed_entity_canonical_sequence"])
+        for protein_chain_id in protein_chain_ids
+    )
+
+    # Check length equality
+    if total_length != len(flexibility_prior):
+        raise ValueError(
+            "Flexibility prior does not contain 1 value for each protein residue\n"
+            f"Total residues: {total_length}\n"
+            f"Flexibility prior length {len(flexibility_prior)}\n"
+        )

@@ -59,7 +59,7 @@ from sampleworks.utils.guidance_script_arguments import (
     validate_model_checkpoint,
 )
 from sampleworks.utils.msa import MSAManager
-from sampleworks.utils.sequence import apply_sequence_override
+from sampleworks.utils.sequence import apply_sequence_override, validate_flexibility_prior
 
 
 # The following imports aren't compatible with each other and are supported in separate
@@ -678,6 +678,9 @@ def _run_guidance(args: GuidanceConfig, guidance_type: str, model_wrapper, devic
     is_boltz = "Boltz" in wrapper_class_name
 
     structure = apply_sequence_override(structure, args.sequence)
+    if args.flexibility_prior:
+        # check flexibility prior has same length as the now updated sequence
+        validate_flexibility_prior(structure, args.flexibility_prior)
 
     # Annotate structure with model-specific configuration (including recycling_steps)
     # See https://github.com/prism-science/sampleworks/issues/192 for a plan to organize this
@@ -748,6 +751,10 @@ def _run_guidance(args: GuidanceConfig, guidance_type: str, model_wrapper, devic
         augmentation=args.augmentation,
         align_to_input=args.align_to_input,
         alignment_reverse_diffusion=use_alignment_for_reverse_diffusion,
+        # for position-wise asynch diffusion
+        flexibility_prior=args.flexibility_prior,
+        asynchronous_diffusion_parameter=args.asynchronous_diffusion_parameter,
+        asynchronous_diffusion_bound=args.asynchronous_diffusion_bound,
         **edm_sampler_kwargs,
     )
     sampler = AF3EDMSampler(
