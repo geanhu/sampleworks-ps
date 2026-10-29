@@ -138,7 +138,7 @@ class EDMSamplerConfig:
     device: str | torch.device = "cpu"
     flexibility_prior: list[float] | None = None
     asynchronous_diffusion_parameter: list[str] | None = None
-    asynchronous_diffusion_bound: float | None = 0.0
+    asynchronous_diffusion_bound: float = 0.0
     asynchronous_diffusion_shutoff: bool = False
 
     def __post_init__(self) -> None:
@@ -150,12 +150,15 @@ class EDMSamplerConfig:
             raise ValueError(f"s_min ({self.s_min}) must be less than s_max ({self.s_max})")
         if self.sigma_data <= 0:
             raise ValueError(f"sigma_data ({self.sigma_data}) must be positive")
-        if self.asynchronous_diffusion_bound:
-            if not 0 <= self.asynchronous_diffusion_bound <= 1:
-                raise ValueError(
-                    f"asynchronous_diffusion_bound ({self.asynchronous_diffusion_bound}) "
-                    "must be in [0,1]"
-                )
+        
+        # validate asynch diff bound value
+        if self.asynchronous_diffusion_parameter:
+            if 'step_scale' in self.asynchronous_diffusion_parameter:
+                if not (1 <= self.asynchronous_diffusion_bound <= self.step_scale):
+                    raise ValueError(
+                        f"asynchronous_diffusion_bound ({self.asynchronous_diffusion_bound}) "
+                        f"must be in [1,{self.step_scale}]"
+                    )
 
 
 class AF3EDMSampler:
@@ -192,6 +195,15 @@ class AF3EDMSampler:
             ``device``).
         """
         self.config = config
+
+        # move asynch diff prior onto same device here
+        # since EDMSamplerConfig is read-only class
+        if self.config.flexibility_prior:
+            self.flexibility_prior = torch.as_tensor(
+                self.config.flexibility_prior, 
+                dtype=torch.float32, 
+                device=self.config.device
+            )
 
     def check_context(self, context: StepParams) -> None:
         """Validate that the provided StepParams is ready for step.
@@ -319,6 +331,10 @@ class AF3EDMSampler:
             t=t_hat,
             dt=dt,
             noise_scale=eps_scale,
+            # pass whether churn is off for asynch diff shutoff
+            metadata={
+                'churn_off': (schedule.gamma[step_index] == 0.0) # ty: ignore[unresolved-attribute]
+            }
         )
 
     def _apply_scaler_guidance(
@@ -537,9 +553,26 @@ class AF3EDMSampler:
                     "... [b n c]", eps_working_frame**2 - (eps_working_frame + proposal_shift) ** 2
                 ) / (2 * noise_var)
 
+        
+        # Apply asynch diff here if step_scale selected as parameter
+        asynch_step_scale = (self.config.asynchronous_diffusion_parameter and 
+                             'step_scale' in self.config.asynchronous_diffusion_parameter)
+        # (and before shutoff, if enabled)
+        # TODO: move this up, since applies to any asynch diff
+        asynch_shutoff = (self.config.asynchronous_diffusion_shutoff and 
+                          context.metadata['churn_off'])
+        
+        if asynch_step_scale and not asynch_shutoff:
+            # calculate position-wise step scale value using prior and bound
+            step_scale = self.config.step_scale - (
+                self.flexibility_prior * (self.config.step_scale - self.config.asynchronous_diffusion_bound)
+            )
+        else:
+            step_scale = self.config.step_scale
+
         # Euler step: x_{t-1} = x_t + step_scale * dt * delta
         # ty sees dt as float | None, but it will be float if check_context didn't raise
-        next_state = noisy_state_working_frame_t + self.config.step_scale * dt * delta  # ty: ignore[unsupported-operator]
+        next_state = noisy_state_working_frame_t + step_scale * dt * delta  # ty: ignore[unsupported-operator]
 
         return SamplerStepOutput(
             state=next_state,
