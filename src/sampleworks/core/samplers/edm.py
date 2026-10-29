@@ -112,14 +112,15 @@ class EDMSamplerConfig:
         Position-wise prior for residue flexibility provided as a .txt file with the prior value
         for each residue on a new line. Must have the same number of values (lines) as residues in
         the provided sequence. Value should be normalized on 0-1 scale, with higher values
-        indicating greater flexibility. 0.5 will lead to recovering the original 
-        asynchronous_diffusion_parameter value.
+        indicating greater flexibility. 
     asynchronous_diffusion_parameter
         Parameter(s) that the position-wise flexibility prior should be applied to.
     asynchronous_diffusion_bound
-        Bound on how de-synced asynchronous_diffusion_parameter is from its normal value.
-        Parameter value for residue with a prior of 0/1 : normal parameter value is bound by
-        1 +/- asynchronous_diffusion_bound.
+        Bound on how de-synced asynchronous_diffusion_parameter can be from normal value,
+        i.e. asynchronous_diffusion_parameter value for a residue with a prior of 1.
+    asynchronous_diffusion_shutoff
+        Whether asynchronous_diffusion_parameter should be restored to its default value after
+        churn shutoff. 
     """
 
     sigma_data: float = 16.0
@@ -138,6 +139,7 @@ class EDMSamplerConfig:
     flexibility_prior: list[float] | None = None
     asynchronous_diffusion_parameter: list[str] | None = None
     asynchronous_diffusion_bound: float | None = 0.0
+    asynchronous_diffusion_shutoff: bool = False
 
     def __post_init__(self) -> None:
         if self.p == 0:

@@ -501,11 +501,13 @@ class TestArgPassthrough:
             "--guidance-type", "pure_guidance",
             # arguments being tested
             "--asynchronous-diffusion-parameter", "noise_scale",
-            "--asynchronous-diffusion-bound", "0.05"
+            "--asynchronous-diffusion-bound", "0.05",
+            "--asynchronous-diffusion-shutoff",
         ] + COMMON_ARGS
         config = GuidanceConfig.from_cli(argv)
         assert config.asynchronous_diffusion_parameter == ['noise_scale']
         assert config.asynchronous_diffusion_bound == 0.05
+        assert config.asynchronous_diffusion_shutoff == True
 
 class TestValidationEdgeCases:
     """Additional validation edge cases."""
