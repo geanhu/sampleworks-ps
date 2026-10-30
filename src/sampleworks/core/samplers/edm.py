@@ -553,7 +553,6 @@ class AF3EDMSampler:
                     "... [b n c]", eps_working_frame**2 - (eps_working_frame + proposal_shift) ** 2
                 ) / (2 * noise_var)
 
-        
         # Apply asynch diff here if step_scale selected as parameter
         asynch_step_scale = (self.config.asynchronous_diffusion_parameter and 
                              'step_scale' in self.config.asynchronous_diffusion_parameter)
@@ -566,7 +565,7 @@ class AF3EDMSampler:
             # calculate position-wise step scale value using prior and bound
             step_scale = self.config.step_scale - (
                 self.flexibility_prior * (self.config.step_scale - self.config.asynchronous_diffusion_bound)
-            )
+            )[..., None] # should be applied per-residue
         else:
             step_scale = self.config.step_scale
 
