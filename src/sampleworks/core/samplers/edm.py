@@ -138,7 +138,7 @@ class EDMSamplerConfig:
     device: str | torch.device = "cpu"
     flexibility_prior: list[float] | None = None
     asynchronous_diffusion_parameter: list[str] | None = None
-    asynchronous_diffusion_bound: float = 0.0
+    asynchronous_diffusion_bound: float | None = None
     asynchronous_diffusion_shutoff: bool = False
 
     def __post_init__(self) -> None:
@@ -153,6 +153,12 @@ class EDMSamplerConfig:
         
         # validate asynch diff bound value
         if self.asynchronous_diffusion_parameter:
+            if not self.asynchronous_diffusion_bound:
+                raise ValueError(
+                    "Because asynchronous_diffusion_parameter is provided: "
+                    f"{self.asynchronous_diffusion_parameter}, asynchronous_diffusion_bound "
+                    "must also be provided."
+                )
             if 'step_scale' in self.asynchronous_diffusion_parameter:
                 if not (1 <= self.asynchronous_diffusion_bound <= self.step_scale):
                     raise ValueError(
@@ -204,6 +210,9 @@ class AF3EDMSampler:
                 dtype=torch.float32, 
                 device=self.config.device
             )
+
+            # precalculate residue-wise parameters
+            self._compute_asynch_diff()
 
     def check_context(self, context: StepParams) -> None:
         """Validate that the provided StepParams is ready for step.
@@ -348,6 +357,7 @@ class AF3EDMSampler:
         model_wrapper: FlowModelWrapper,
         align_transform: Mapping[str, torch.Tensor] | None,
         allow_gradients: bool,
+        step_scale: float | Float[torch.Tensor, "*batch n"]
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
         """Apply guidance from scaler to the denoising direction.
 
@@ -394,10 +404,28 @@ class AF3EDMSampler:
             einx.multiply("b, b n c -> b n c", guidance_weight, guidance_direction)
             / context.t_effective
         )
-        proposal_shift = self.config.step_scale * context.dt * scaled_delta_contribution  # ty: ignore[unsupported-operator] (dt will be Array if check_context didn't raise)
+        proposal_shift = step_scale * context.dt * scaled_delta_contribution  # ty: ignore[unsupported-operator] (dt will be Array if check_context didn't raise)
 
         result = delta + scaled_delta_contribution
         return torch.as_tensor(result), loss, torch.as_tensor(proposal_shift)
+
+    def _compute_asynch_diff(
+        self
+    ):
+        """Pre-compute per-residue parameters that stay constant throughout
+        trajectory.
+        """
+        if self.config.flexibility_prior and self.config.asynchronous_diffusion_bound:
+            # step scale
+            self.asynch_step_scale = self.config.step_scale - (
+                self.flexibility_prior * (self.config.step_scale - self.config.asynchronous_diffusion_bound)
+            )[..., None] # should be applied per-residue
+
+            # noise scale
+            # TODO
+
+            # guidance weight
+            # TODO
 
     def step(
         self,
@@ -526,6 +554,20 @@ class AF3EDMSampler:
         noisy_state_working_frame_t = torch.as_tensor(noisy_state_working_frame)
         delta = torch.as_tensor((noisy_state_working_frame_t - x_hat_0_working_frame_t) / t_hat)
 
+        # Apply asynch diff here if step_scale selected as parameter
+        # We need to calculate this before guidance so that the correct
+        # per-residue step scale is supplied to FK steering
+        asynch_step_scale = (self.config.asynchronous_diffusion_parameter and 
+                                'step_scale' in self.config.asynchronous_diffusion_parameter)
+        # (and before shutoff, if enabled)
+        # TODO: move this up, since applies to any asynch diff
+        asynch_shutoff = (self.config.asynchronous_diffusion_shutoff and 
+                            context.metadata['churn_off'])
+        if asynch_step_scale and not asynch_shutoff:
+            step_scale = self.asynch_step_scale
+        else:
+            step_scale = self.config.step_scale
+
         loss = None
         log_proposal_correction = None
         if scaler is not None:
@@ -538,6 +580,7 @@ class AF3EDMSampler:
                 model_wrapper=model_wrapper,
                 align_transform=align_transform,
                 allow_gradients=allow_gradients,
+                step_scale=step_scale
             )
 
             # eps is the noise added. scaled_guidance_update is the shift.
@@ -553,21 +596,6 @@ class AF3EDMSampler:
                     "... [b n c]", eps_working_frame**2 - (eps_working_frame + proposal_shift) ** 2
                 ) / (2 * noise_var)
 
-        # Apply asynch diff here if step_scale selected as parameter
-        asynch_step_scale = (self.config.asynchronous_diffusion_parameter and 
-                             'step_scale' in self.config.asynchronous_diffusion_parameter)
-        # (and before shutoff, if enabled)
-        # TODO: move this up, since applies to any asynch diff
-        asynch_shutoff = (self.config.asynchronous_diffusion_shutoff and 
-                          context.metadata['churn_off'])
-        
-        if asynch_step_scale and not asynch_shutoff:
-            # calculate position-wise step scale value using prior and bound
-            step_scale = self.config.step_scale - (
-                self.flexibility_prior * (self.config.step_scale - self.config.asynchronous_diffusion_bound)
-            )[..., None] # should be applied per-residue
-        else:
-            step_scale = self.config.step_scale
 
         # Euler step: x_{t-1} = x_t + step_scale * dt * delta
         # ty sees dt as float | None, but it will be float if check_context didn't raise
