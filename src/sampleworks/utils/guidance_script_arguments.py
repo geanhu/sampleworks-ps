@@ -233,11 +233,6 @@ _DYNAMIC_ATTRS = [
     "ensemble_size",
     "recycling_steps",
     "num_diffusion_steps",
-    # TODO: remove
-    "flexibility_prior",
-    "asynchronous_diffusion_parameter",
-    "asynchronous_diffusion_bound",
-    "asynchronous_diffusion_shutoff",
 ]
 
 

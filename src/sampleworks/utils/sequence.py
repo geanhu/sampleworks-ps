@@ -7,6 +7,7 @@ import os
 from itertools import islice
 from pathlib import Path
 from typing import Any
+from loguru import logger
 
 import numpy as np
 from atomworks.constants import STANDARD_AA
@@ -364,11 +365,14 @@ def resolve_flexibility_prior_arg(value: str | os.PathLike[str] | None) -> list[
     if value is None:
         return None
 
-    sequence = os.fspath(value).strip()
-    if not sequence:
+    prior = os.fspath(value).strip()
+    if not prior:
         return None
 
-    path = Path(sequence).expanduser()
+    path = Path(prior).expanduser()
+    logger.info(
+        f'Extracting flexibility prior values from {path}'
+    )
     if path.suffix == ".txt":
         flexibility_prior = []  # store parsed values
 
@@ -394,7 +398,7 @@ def resolve_flexibility_prior_arg(value: str | os.PathLike[str] | None) -> list[
                     )
 
                 flexibility_prior.append(line_value)
-
+                
         return flexibility_prior
     else:
         raise ValueError(".txt file expected for flexibility prior input")
