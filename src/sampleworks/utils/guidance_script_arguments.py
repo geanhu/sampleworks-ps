@@ -275,7 +275,9 @@ class GuidanceConfig:
     # in from the density fields below, which is how grid search builds configs.
     loss_config: dict[str, Any] = field(default_factory=dict)
     sequence: str | None = None
-    flexibility_prior: list[float] | None = None  # TODO: remove
+    flexibility_prior: list[float] | None = field(
+        default=None, repr=False
+    ) # TODO: remove
     asynchronous_diffusion_parameter: list[str] | None = None
     asynchronous_diffusion_bound: float | None = None
     asynchronous_diffusion_shutoff: bool = False
@@ -782,8 +784,7 @@ def add_generic_args(parser: argparse.ArgumentParser | GuidanceConfig):
         type=str,
         default=None,
         help="Position-wise prior for residue flexibility provided as a .txt file with the prior "
-        "value for each residue on a new line. Must have the same number of values (lines) as "
-        "residues in the provided sequence. Value should be normalized on 0-1 scale, with higher "
+        "value for each atom on a new line. Value should be normalized on 0-1 scale, with higher "
         "values indicating greater flexibility.",
     )
     parser.add_argument(

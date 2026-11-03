@@ -7,6 +7,7 @@ import os
 from itertools import islice
 from pathlib import Path
 from typing import Any
+from loguru import logger
 
 import numpy as np
 from atomworks.constants import STANDARD_AA
@@ -364,11 +365,14 @@ def resolve_flexibility_prior_arg(value: str | os.PathLike[str] | None) -> list[
     if value is None:
         return None
 
-    sequence = os.fspath(value).strip()
-    if not sequence:
+    prior = os.fspath(value).strip()
+    if not prior:
         return None
 
-    path = Path(sequence).expanduser()
+    path = Path(prior).expanduser()
+    logger.info(
+        f'Extracting flexibility prior values from {path}'
+    )
     if path.suffix == ".txt":
         flexibility_prior = []  # store parsed values
 
@@ -394,50 +398,9 @@ def resolve_flexibility_prior_arg(value: str | os.PathLike[str] | None) -> list[
                     )
 
                 flexibility_prior.append(line_value)
-
+                
         return flexibility_prior
     else:
         raise ValueError(".txt file expected for flexibility prior input")
 
 
-def validate_flexibility_prior(structure: dict[str, Any], flexibility_prior: list[float]):
-    """Validates that length of flexibility prior matches length of
-    all residues in input protein chain(s), after sequence override.
-
-    Parameters
-    ----------
-    structure: dict[str, Any]
-        Atomworks-parsed structure containing a ``chain_info`` mapping.
-    flexibility_prior: list[float]
-        List of per-residue flexibility prior values.
-
-    Raises
-    ------
-    ValueError
-        If length of flexibility_prior != combined length of all protein chains
-        in structure.
-    """
-    # Get protein chain info
-    chain_info = structure.get("chain_info")
-    # Validate annotations exist (in case there was no sequence override)
-    if not chain_info:
-        raise ValueError("Using flexibility prior structure chain_info")
-    protein_chain_ids = [
-        chain_id for chain_id, info in chain_info.items() if info["chain_type"].is_protein()
-    ]
-    if not protein_chain_ids:
-        raise ValueError("Using flexibility prior at least one protein chain")
-
-    # Iterate through each chain
-    total_length = sum(
-        len(chain_info[protein_chain_id]["processed_entity_canonical_sequence"])
-        for protein_chain_id in protein_chain_ids
-    )
-
-    # Check length equality
-    if total_length != len(flexibility_prior):
-        raise ValueError(
-            "Flexibility prior does not contain 1 value for each protein residue\n"
-            f"Total residues: {total_length}\n"
-            f"Flexibility prior length {len(flexibility_prior)}\n"
-        )
