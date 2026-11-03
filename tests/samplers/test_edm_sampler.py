@@ -1,16 +1,10 @@
 """Tests for the EDM sampler's schedule and configuration."""
-<<<<<<< HEAD
-=======
-import pytest
-from tests.mocks import (
-    MockFlowModelWrapper
-)
 
+import pytest
 import torch
-from sampleworks.core.samplers.edm import (
-    EDMSamplerConfig,
-    AF3EDMSampler
-)
+from sampleworks.core.samplers.edm import AF3EDMSampler, EDMSamplerConfig
+from tests.mocks import MockFlowModelWrapper
+
 
 class TestAsynchDiff:
     """Test asynchronous diffusion in the EDM sampler."""
@@ -18,13 +12,8 @@ class TestAsynchDiff:
     def test_flexibility_prior_tensor(self):
         """Test that flexibility_prior is tensor runtime"""
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        sampler_config = EDMSamplerConfig(
-            device = device,
-            flexibility_prior=[0, 0]
-        )
-        sampler = AF3EDMSampler(
-            config = sampler_config
-        )
+        sampler_config = EDMSamplerConfig(device=device, flexibility_prior=[0, 0])
+        sampler = AF3EDMSampler(config=sampler_config)
 
         assert torch.is_tensor(sampler.flexibility_prior), (
             "flexibility_prior is not tensor at runtime"
@@ -43,13 +32,12 @@ class TestAsynchDiff:
         """Test that invalid step scale bounds throw error."""
         with pytest.raises(ValueError):
             EDMSamplerConfig(
-                asynchronous_diffusion_parameter=['step_scale'],
-                asynchronous_diffusion_bound=bound
+                asynchronous_diffusion_parameter=["step_scale"], asynchronous_diffusion_bound=bound
             )
 
     @pytest.mark.parametrize(
         "parameter",
-        [None, ['noise_scale']],
+        [None, ["noise_scale"]],
         ids=["none_selected", "other_selected"],
     )
     def test_not_applied_if_not_selected(self, parameter: list | None):
@@ -63,53 +51,37 @@ class TestAsynchDiff:
             # should set the step_scale to be 1
             flexibility_prior=[1],
             asynchronous_diffusion_parameter=parameter,
-            asynchronous_diffusion_bound=1
+            asynchronous_diffusion_bound=1,
         )
-        sampler = AF3EDMSampler(
-            config = sampler_config
-        )
+        sampler = AF3EDMSampler(config=sampler_config)
 
-        mock_state = torch.tensor(
-            [[1, 1, 1]],
-            dtype=torch.float32
-        )
-        mock_wrapper = MockFlowModelWrapper(
-            num_atoms=1,
-            target=mock_state
-        )
+        mock_state = torch.tensor([[1, 1, 1]], dtype=torch.float32)
+        mock_wrapper = MockFlowModelWrapper(num_atoms=1, target=mock_state)
         mock_StepParams = sampler.get_context_for_step(
             # pick step with churn shutoff so noise
-            # is not re-added and output is 
+            # is not re-added and output is
             # deterministic
             step_index=199,
-            schedule=sampler.compute_schedule(
-                num_steps=200
-            )
+            schedule=sampler.compute_schedule(num_steps=200),
         )
         output = sampler.step(
-            state = mock_state,
+            state=mock_state,
             # create mock ModelWrapper that returns same state
             model_wrapper=mock_wrapper,
-            context = mock_StepParams,
-            features=mock_wrapper.featurize(
-                structure={}
-            )
+            context=mock_StepParams,
+            features=mock_wrapper.featurize(structure={}),
         )
         torch.testing.assert_close(
-            actual = output.state,
-            expected = torch.tensor(
-                [[0.2515, 0.2515, 0.2515]],
-                dtype=torch.float32
-            ),
+            actual=output.state,
+            expected=torch.tensor([[0.2515, 0.2515, 0.2515]], dtype=torch.float32),
             rtol=0,
             atol=0.01,
             msg=lambda msg: (
                 "Output state seems to have modified step scale despite step_scale "
                 "not being provided to asynchronous_diffusion_parameter."
                 f"\n{msg}"
-            )
+            ),
         )
-        
 
     def test_not_applied_upon_shutoff(self):
         """Test that position-wise step scale is not used after churn shutoff,
@@ -121,44 +93,28 @@ class TestAsynchDiff:
             # prior of 1 (highest value) and bound of 1
             # should set the step_scale to be 1
             flexibility_prior=[1],
-            asynchronous_diffusion_parameter=['step_scale'],
+            asynchronous_diffusion_parameter=["step_scale"],
             asynchronous_diffusion_bound=1,
             # shutoff enabled
-            asynchronous_diffusion_shutoff=True
+            asynchronous_diffusion_shutoff=True,
         )
-        sampler = AF3EDMSampler(
-            config = sampler_config
-        )
+        sampler = AF3EDMSampler(config=sampler_config)
 
-        mock_state = torch.tensor(
-            [[1, 1, 1]],
-            dtype=torch.float32
-        )
-        mock_wrapper = MockFlowModelWrapper(
-            num_atoms=1,
-            target=mock_state
-        )
+        mock_state = torch.tensor([[1, 1, 1]], dtype=torch.float32)
+        mock_wrapper = MockFlowModelWrapper(num_atoms=1, target=mock_state)
         mock_StepParams = sampler.get_context_for_step(
-            step_index=199,
-            schedule=sampler.compute_schedule(
-                num_steps=200
-            )
+            step_index=199, schedule=sampler.compute_schedule(num_steps=200)
         )
         output = sampler.step(
-            state = mock_state,
+            state=mock_state,
             # create mock ModelWrapper that returns same state
             model_wrapper=mock_wrapper,
-            context = mock_StepParams,
-            features=mock_wrapper.featurize(
-                structure={}
-            )
+            context=mock_StepParams,
+            features=mock_wrapper.featurize(structure={}),
         )
         torch.testing.assert_close(
-            actual = output.state,
-            expected = torch.tensor(
-                [[0.2515, 0.2515, 0.2515]],
-                dtype=torch.float32
-            ),
+            actual=output.state,
+            expected=torch.tensor([[0.2515, 0.2515, 0.2515]], dtype=torch.float32),
             rtol=0,
             atol=0.01,
             msg=lambda msg: (
@@ -166,58 +122,42 @@ class TestAsynchDiff:
                 "asynchronous diffusion is supposed to be shut off "
                 "after churn is disabled. "
                 f"\n{msg}"
-            )
+            ),
         )
-    
+
     def test_step_scale(self):
-        """Test whether position-wise noise scale is correctly applied.
-        """
+        """Test whether position-wise noise scale is correctly applied."""
         sampler_config = EDMSamplerConfig(
             # turn augmentation off for deterministic output
             augmentation=False,
             # prior of 1 (highest value) and bound of 1
             # should set the step_scale to be 1
             flexibility_prior=[1, 0],
-            asynchronous_diffusion_parameter=['step_scale'],
-            asynchronous_diffusion_bound=1
+            asynchronous_diffusion_parameter=["step_scale"],
+            asynchronous_diffusion_bound=1,
         )
-        sampler = AF3EDMSampler(
-            config = sampler_config
-        )
+        sampler = AF3EDMSampler(config=sampler_config)
 
-        mock_state = torch.tensor(
-            [[1, 1, 1],
-             [1, 1, 1]],
-            dtype=torch.float32
-        )
-        mock_wrapper = MockFlowModelWrapper(
-            num_atoms=2,
-            target=mock_state
-        )
+        mock_state = torch.tensor([[1, 1, 1], [1, 1, 1]], dtype=torch.float32)
+        mock_wrapper = MockFlowModelWrapper(num_atoms=2, target=mock_state)
         mock_StepParams = sampler.get_context_for_step(
             # pick step with churn shutoff so noise
-            # is not re-added and output is 
+            # is not re-added and output is
             # deterministic
             step_index=199,
-            schedule=sampler.compute_schedule(
-                num_steps=200
-            )
+            schedule=sampler.compute_schedule(num_steps=200),
         )
         output = sampler.step(
-            state = mock_state,
+            state=mock_state,
             # create mock ModelWrapper that returns same state
             model_wrapper=mock_wrapper,
-            context = mock_StepParams,
-            features=mock_wrapper.featurize(
-                structure={}
-            )
+            context=mock_StepParams,
+            features=mock_wrapper.featurize(structure={}),
         )
         torch.testing.assert_close(
-            actual = output.state,
-            expected = torch.tensor(
-                [[0.169, 0.169, 0.169],
-                 [0.2515, 0.2515, 0.2515]],
-                dtype=torch.float32
+            actual=output.state,
+            expected=torch.tensor(
+                [[0.169, 0.169, 0.169], [0.2515, 0.2515, 0.2515]], dtype=torch.float32
             ),
             rtol=0,
             atol=0.01,
@@ -225,12 +165,9 @@ class TestAsynchDiff:
                 "Output state seems to have modified step scale despite step_scale "
                 "not being provided to asynchronous_diffusion_parameter."
                 f"\n{msg}"
-            )
+            ),
         )
-    
+
     # ---- noise scale
 
     # ---- guidance weight
-
-    
->>>>>>> step-scale

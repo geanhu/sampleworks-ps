@@ -275,9 +275,7 @@ class GuidanceConfig:
     # in from the density fields below, which is how grid search builds configs.
     loss_config: dict[str, Any] = field(default_factory=dict)
     sequence: str | None = None
-    flexibility_prior: list[float] | None = field(
-        default=None, repr=False
-    ) # TODO: remove
+    flexibility_prior: list[float] | None = field(default=None, repr=False)  # TODO: remove
     asynchronous_diffusion_parameter: list[str] | None = None
     asynchronous_diffusion_bound: float | None = None
     asynchronous_diffusion_shutoff: bool = False
@@ -421,7 +419,7 @@ class GuidanceConfig:
             flexibility_prior=resolve_flexibility_prior_arg(args.flexibility_prior),
             asynchronous_diffusion_parameter=args.asynchronous_diffusion_parameter,
             asynchronous_diffusion_bound=args.asynchronous_diffusion_bound,
-            asynchronous_diffusion_shutoff=args.asynchronous_diffusion_shutoff
+            asynchronous_diffusion_shutoff=args.asynchronous_diffusion_shutoff,
         )
 
         # __post_init__ already set defaults for model/guidance-specific
@@ -800,13 +798,13 @@ def add_generic_args(parser: argparse.ArgumentParser | GuidanceConfig):
         type=float,
         default=0.0,
         help="Bound on how de-synced asynchronous_diffusion_parameter can be from normal value, "
-        "i.e. asynchronous_diffusion_parameter value for residue with prior of 1."
+        "i.e. asynchronous_diffusion_parameter value for residue with prior of 1.",
     )
     parser.add_argument(
         "--asynchronous-diffusion-shutoff",
         action="store_true",
         help="Whether asynchronous_diffusion_parameter should be restored to its default value "
-        "after churn shutoff. "
+        "after churn shutoff. ",
     )
 
 
