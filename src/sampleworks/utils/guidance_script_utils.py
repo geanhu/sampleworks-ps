@@ -565,6 +565,7 @@ def save_everything(
         atom_array = base_atom_array
 
     metadata = args.as_dict()
+    metadata.pop("flexibility_prior", None) #TODO: remove, don't save
     _write_structure_cif(
         output_dir / "refined.cif",
         atom_array,
