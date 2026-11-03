@@ -59,7 +59,7 @@ from sampleworks.utils.guidance_script_arguments import (
     validate_model_checkpoint,
 )
 from sampleworks.utils.msa import MSAManager
-from sampleworks.utils.sequence import apply_sequence_override, validate_flexibility_prior
+from sampleworks.utils.sequence import apply_sequence_override
 
 
 # The following imports aren't compatible with each other and are supported in separate
@@ -678,9 +678,6 @@ def _run_guidance(args: GuidanceConfig, guidance_type: str, model_wrapper, devic
     is_boltz = "Boltz" in wrapper_class_name
 
     structure = apply_sequence_override(structure, args.sequence)
-    if args.flexibility_prior:
-        # check flexibility prior has same length as the now updated sequence
-        validate_flexibility_prior(structure, args.flexibility_prior)
 
     # Annotate structure with model-specific configuration (including recycling_steps)
     # See https://github.com/prism-science/sampleworks/issues/192 for a plan to organize this

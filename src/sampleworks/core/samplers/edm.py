@@ -22,7 +22,6 @@ from sampleworks.utils.frame_transforms import (
 )
 from sampleworks.utils.framework_utils import match_batch
 
-
 if TYPE_CHECKING:
     from sampleworks.core.scalers.protocol import StepScalerProtocol
 
@@ -553,7 +552,7 @@ class AF3EDMSampler:
         x_hat_0_working_frame_t = torch.as_tensor(x_hat_0_working_frame)
         noisy_state_working_frame_t = torch.as_tensor(noisy_state_working_frame)
         delta = torch.as_tensor((noisy_state_working_frame_t - x_hat_0_working_frame_t) / t_hat)
-
+        
         # Apply asynch diff here if step_scale selected as parameter
         # We need to calculate this before guidance so that the correct
         # per-residue step scale is supplied to FK steering
