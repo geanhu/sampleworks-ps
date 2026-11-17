@@ -336,13 +336,25 @@ class AF3EDMSampler:
         sigma_tm = schedule.sigma_tm[step_index]  # ty: ignore[unresolved-attribute]
         churn_off = (schedule.gamma[step_index] == 0.0)
 
-        # apply asynch diff here if enabled for noise scale
+        # apply asynch diff here
+        asynch_shutoff = (
+                    self.config.asynchronous_diffusion_shutoff and churn_off
+                )
+
+        # step scale
+        asynch_step_scale = (
+            self.config.asynchronous_diffusion_parameter
+            and "step_scale" in self.config.asynchronous_diffusion_parameter
+        )
+        if asynch_step_scale and not asynch_shutoff:
+            step_scale = self.asynch_step_scale
+        else:
+            step_scale = self.config.step_scale
+
+        # noise scale
         asynch_noise_scale = (
             self.config.asynchronous_diffusion_parameter
             and "noise_scale" in self.config.asynchronous_diffusion_parameter
-        )
-        asynch_shutoff = (
-            self.config.asynchronous_diffusion_shutoff and churn_off
         )
         if asynch_noise_scale and not asynch_shutoff:
             noise_scale = self.asynch_noise_scale
@@ -361,7 +373,8 @@ class AF3EDMSampler:
             # pass whether churn is off for asynch diff shutoff
             metadata={
                 "churn_off": churn_off,  # ty: ignore[unresolved-attribute]
-                "eps_scale_original": self.config.noise_scale * torch.sqrt(t_hat**2 - sigma_tm**2)
+                "eps_scale_original": self.config.noise_scale * torch.sqrt(t_hat**2 - sigma_tm**2),
+                "step_scale": step_scale
             },
         )
 
@@ -584,22 +597,6 @@ class AF3EDMSampler:
         noisy_state_working_frame_t = torch.as_tensor(noisy_state_working_frame)
         delta = torch.as_tensor((noisy_state_working_frame_t - x_hat_0_working_frame_t) / t_hat)
 
-        # Apply asynch diff here if step_scale selected as parameter
-        # We need to calculate this before guidance so that the correct
-        # per-residue step scale is supplied to FK steering
-        # TODO: it would be cleaner for this to all live inside StepParams
-        asynch_step_scale = (
-            self.config.asynchronous_diffusion_parameter
-            and "step_scale" in self.config.asynchronous_diffusion_parameter
-        )
-        asynch_shutoff = (
-            self.config.asynchronous_diffusion_shutoff and context.metadata["churn_off"]
-        )
-        if asynch_step_scale and not asynch_shutoff:
-            step_scale = self.asynch_step_scale
-        else:
-            step_scale = self.config.step_scale
-
         loss = None
         log_proposal_correction = None
         if scaler is not None:
@@ -612,7 +609,7 @@ class AF3EDMSampler:
                 model_wrapper=model_wrapper,
                 align_transform=align_transform,
                 allow_gradients=allow_gradients,
-                step_scale=step_scale,
+                step_scale=context.metadata['step_scale'],
             )
 
             # eps is the noise added. scaled_guidance_update is the shift.
@@ -630,7 +627,7 @@ class AF3EDMSampler:
 
         # Euler step: x_{t-1} = x_t + step_scale * dt * delta
         # ty sees dt as float | None, but it will be float if check_context didn't raise
-        next_state = noisy_state_working_frame_t + step_scale * dt * delta  # ty: ignore[unsupported-operator]
+        next_state = noisy_state_working_frame_t + context.metadata['step_scale'] * dt * delta  # ty: ignore[unsupported-operator]
 
         return SamplerStepOutput(
             state=next_state,
