@@ -163,7 +163,13 @@ class EDMSamplerConfig:
                 if not (1 <= self.asynchronous_diffusion_bound <= self.step_scale):
                     raise ValueError(
                         f"asynchronous_diffusion_bound ({self.asynchronous_diffusion_bound}) "
-                        f"must be in [1,{self.step_scale}]"
+                        f"for step scale must be in [1,{self.step_scale}]"
+                    )
+            if "noise_scale" in self.asynchronous_diffusion_parameter:
+                if not (1 <= self.asynchronous_diffusion_bound):
+                    raise ValueError(
+                        f"asynchronous_diffusion_bound ({self.asynchronous_diffusion_bound}) "
+                        f"for noise scale must be >= 1"
                     )
 
 
@@ -328,7 +334,21 @@ class AF3EDMSampler:
         t_hat = schedule.t_hat[step_index]  # ty: ignore[unresolved-attribute] (accessible after check_schedule)
         dt = schedule.dt[step_index]  # ty: ignore[unresolved-attribute]
         sigma_tm = schedule.sigma_tm[step_index]  # ty: ignore[unresolved-attribute]
-        eps_scale = self.config.noise_scale * torch.sqrt(t_hat**2 - sigma_tm**2)
+        churn_off = (schedule.gamma[step_index] == 0.0)
+
+        # apply asynch diff here if enabled for noise scale
+        asynch_noise_scale = (
+            self.config.asynchronous_diffusion_parameter
+            and "noise_scale" in self.config.asynchronous_diffusion_parameter
+        )
+        asynch_shutoff = (
+            self.config.asynchronous_diffusion_shutoff and churn_off
+        )
+        if asynch_noise_scale and not asynch_shutoff:
+            noise_scale = self.asynch_noise_scale
+        else:
+            noise_scale = self.config.noise_scale
+        eps_scale = noise_scale * torch.sqrt(t_hat**2 - sigma_tm**2)      
 
         total_steps = len(schedule.sigma_t)  # ty: ignore[unresolved-attribute] (this will be accessible due to the check above)
 
@@ -340,7 +360,8 @@ class AF3EDMSampler:
             noise_scale=eps_scale,
             # pass whether churn is off for asynch diff shutoff
             metadata={
-                "churn_off": (schedule.gamma[step_index] == 0.0)  # ty: ignore[unresolved-attribute]
+                "churn_off": churn_off,  # ty: ignore[unresolved-attribute]
+                "eps_scale_original": self.config.noise_scale * torch.sqrt(t_hat**2 - sigma_tm**2)
             },
         )
 
@@ -412,17 +433,26 @@ class AF3EDMSampler:
         trajectory.
         """
         if self.config.flexibility_prior and self.config.asynchronous_diffusion_bound:
+
             # step scale
+            # flexibility [0, 1] weighted linearly between [asynchronous_diffusion_bound, step_scale]
             self.asynch_step_scale = (
                 self.config.step_scale
                 - (
                     self.flexibility_prior
                     * (self.config.step_scale - self.config.asynchronous_diffusion_bound)
                 )[..., None]
-            )  # should be applied per-residue
+            ) 
 
             # noise scale
-            # TODO
+            # flexibility [0, 1] weighted linearly between [noise_scale, asynchronous_diffusion_bound]
+            self.asynch_noise_scale = (
+                self.config.noise_scale
+                + (
+                    self.flexibility_prior
+                    * (self.config.asynchronous_diffusion_bound - self.config.noise_scale)
+                )
+            )
 
             # guidance weight
             # TODO
@@ -557,12 +587,11 @@ class AF3EDMSampler:
         # Apply asynch diff here if step_scale selected as parameter
         # We need to calculate this before guidance so that the correct
         # per-residue step scale is supplied to FK steering
+        # TODO: it would be cleaner for this to all live inside StepParams
         asynch_step_scale = (
             self.config.asynchronous_diffusion_parameter
             and "step_scale" in self.config.asynchronous_diffusion_parameter
         )
-        # (and before shutoff, if enabled)
-        # TODO: move this up, since applies to any asynch diff
         asynch_shutoff = (
             self.config.asynchronous_diffusion_shutoff and context.metadata["churn_off"]
         )
@@ -593,7 +622,7 @@ class AF3EDMSampler:
             # multiple particles.
             # Only compute when noise_var > 0 to avoid division by near-zero
             # (matching Boltz behavior)
-            noise_var = eps_scale**2
+            noise_var = context.metadata["eps_scale_original"]**2
             if noise_var > 0:
                 log_proposal_correction = einx.sum(
                     "... [b n c]", eps_working_frame**2 - (eps_working_frame + proposal_shift) ** 2
