@@ -22,7 +22,6 @@ class TestAsynchDiff:
             "flexibility_prior is not placed on correct device"
         )
 
-    # ---- step scale
     @pytest.mark.parametrize(
         "bound",
         [0.8, 2.0],
@@ -33,6 +32,17 @@ class TestAsynchDiff:
         with pytest.raises(ValueError):
             EDMSamplerConfig(
                 asynchronous_diffusion_parameter=["step_scale"], asynchronous_diffusion_bound=bound
+            )
+    @pytest.mark.parametrize(
+        "bound",
+        [0.8],
+        ids=["low"],
+    )
+    def test_invalid_noise_scale_bound(self, bound: float):
+        """Test that invalid noise scale bounds throw error."""
+        with pytest.raises(ValueError):
+            EDMSamplerConfig(
+                asynchronous_diffusion_parameter=["noise_scale"], asynchronous_diffusion_bound=bound
             )
 
     @pytest.mark.parametrize(
