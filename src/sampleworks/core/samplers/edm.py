@@ -441,7 +441,7 @@ class AF3EDMSampler:
                 - (
                     self.flexibility_prior
                     * (self.config.step_scale - self.config.asynchronous_diffusion_bound)
-                )[..., None]
+                )[..., None] # add empty dimension to be broadcast into 3D
             ) 
 
             # noise scale
@@ -451,7 +451,7 @@ class AF3EDMSampler:
                 + (
                     self.flexibility_prior
                     * (self.config.asynchronous_diffusion_bound - self.config.noise_scale)
-                )
+                )[..., None] # add empty dimension to be broadcast into 3D
             )
 
             # guidance weight
