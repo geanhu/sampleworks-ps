@@ -338,15 +338,15 @@ class AF3EDMSampler:
 
         # apply asynch diff here
         asynch_shutoff = (
-                    self.config.asynchronous_diffusion_shutoff and churn_off
-                )
+            self.config.asynchronous_diffusion_shutoff and churn_off
+        )
 
         # step scale
         asynch_step_scale = (
             self.config.asynchronous_diffusion_parameter
             and "step_scale" in self.config.asynchronous_diffusion_parameter
-        )
-        if asynch_step_scale and not asynch_shutoff:
+        ) and (not asynch_shutoff)
+        if asynch_step_scale:
             step_scale = self.asynch_step_scale
         else:
             step_scale = self.config.step_scale
@@ -355,12 +355,20 @@ class AF3EDMSampler:
         asynch_noise_scale = (
             self.config.asynchronous_diffusion_parameter
             and "noise_scale" in self.config.asynchronous_diffusion_parameter
-        )
-        if asynch_noise_scale and not asynch_shutoff:
+        ) and (not asynch_shutoff)
+        if asynch_noise_scale:
             noise_scale = self.asynch_noise_scale
         else:
             noise_scale = self.config.noise_scale
-        eps_scale = noise_scale * torch.sqrt(t_hat**2 - sigma_tm**2)      
+        eps_scale = noise_scale * torch.sqrt(t_hat**2 - sigma_tm**2)
+
+        # need access to guidance_weight's original value in scaler
+        # so we can only pre-determine if asynch_guidance_weight should be
+        # applied or not
+        asynch_guidance_weight = (
+            self.config.asynchronous_diffusion_parameter and 
+            "guidance_weight" in self.config.asynchronous_diffusion_parameter
+        ) and not asynch_shutoff  
 
         total_steps = len(schedule.sigma_t)  # ty: ignore[unresolved-attribute] (this will be accessible due to the check above)
 
@@ -374,7 +382,8 @@ class AF3EDMSampler:
             metadata={
                 "churn_off": churn_off,  # ty: ignore[unresolved-attribute]
                 "eps_scale_original": self.config.noise_scale * torch.sqrt(t_hat**2 - sigma_tm**2),
-                "step_scale": step_scale
+                "step_scale": step_scale,
+                "apply_asynch_guidance_weight": asynch_guidance_weight
             },
         )
 
@@ -410,6 +419,21 @@ class AF3EDMSampler:
         loss = torch.as_tensor(loss)
         guidance_weight = scaler.guidance_strength(context)
 
+        # apply asynch guidance weight, if enabled
+        if context.metadata["apply_asynch_guidance_weight"]:
+            guidance_weight_single = guidance_weight
+            if not guidance_weight.ndim == 0: # in case if array
+                guidance_weight_single = guidance_weight.mean()
+            guidance_weight_single = guidance_weight_single.item()
+
+            guidance_weight = (
+                guidance_weight_single
+                + (
+                    self.flexibility_prior
+                    * (self.config.asynchronous_diffusion_bound - guidance_weight_single)
+                )
+            ).unsqueeze(0) #[1, n]
+
         # Ensure guidance_weight has batch dimension matching guidance_direction
         batch_size = guidance_direction.shape[0]
         guidance_weight = torch.as_tensor(guidance_weight, device=noisy_state.device)
@@ -419,7 +443,7 @@ class AF3EDMSampler:
         guidance_weight = torch.as_tensor(
             match_batch(guidance_weight, target_batch_size=batch_size),
             device=noisy_state.device,
-        )
+        ) #[b] or [b, n]
 
         if align_transform is not None and allow_gradients:
             guidance_direction = apply_forward_transform(
@@ -432,8 +456,12 @@ class AF3EDMSampler:
             # update magnitude here, so can optionally scale to match
             guidance_direction = guidance_direction * delta_norm
 
+        if guidance_weight.ndim == 1:
+            broadcast_pattern = "b, b n c -> b n c"
+        else:
+            broadcast_pattern = "b n, b n c -> b n c"
         scaled_delta_contribution = (
-            einx.multiply("b, b n c -> b n c", guidance_weight, guidance_direction)
+            einx.multiply(broadcast_pattern, guidance_weight, guidance_direction)
             / context.t_effective
         )
         proposal_shift = step_scale * context.dt * scaled_delta_contribution  # ty: ignore[unsupported-operator] (dt will be Array if check_context didn't raise)
@@ -466,9 +494,6 @@ class AF3EDMSampler:
                     * (self.config.asynchronous_diffusion_bound - self.config.noise_scale)
                 )[..., None] # add empty dimension to be broadcast into 3D
             )
-
-            # guidance weight
-            # TODO
 
     def step(
         self,
