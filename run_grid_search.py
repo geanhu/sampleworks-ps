@@ -40,6 +40,10 @@ class GridSearchConfig:
     method: str
     proteins_file: str
     output_dir: str
+    #
+    asynchronous_diffusion_parameter: list[str] | None
+    asynchronous_diffusion_bounds: list[float]
+    asynchronous_diffusion_shutoff: bool
 
 
 def get_job_status(job: JobConfig) -> str:
@@ -226,6 +230,10 @@ def build_args_for_process_pool(
         recycling_steps=args.recycling_steps,
         num_diffusion_steps=args.num_diffusion_steps,
         sequence=job.sequence,
+        asynchronous_diffusion_parameter=job.asynchronous_diffusion_parameter,
+        asynchronous_diffusion_bound=job.asynchronous_diffusion_bound,
+        asynchronous_diffusion_shutoff=job.asynchronous_diffusion_shutoff,
+        flexibility_prior=job.flexibility_prior,
     )
     # given model_type and guidance_type, the GuidanceConfig class will set itself up
     # with defaults for remaining required args, but we want to set them further here.
@@ -547,6 +555,12 @@ def main(args: argparse.Namespace):
         method=args.method,
         proteins_file=args.proteins,
         output_dir=args.output_dir,
+        asynchronous_diffusion_parameter=args.asynchronous_diffusion_parameter,
+        asynchronous_diffusion_bounds=[
+            float(value)
+            for value in args.asynchronous_diffusion_bounds.split()
+        ],
+        asynchronous_diffusion_shutoff=args.asynchronous_diffusion_shutoff,
     )
 
     start_time = time.time()
@@ -570,33 +584,47 @@ def generate_jobs(args: argparse.Namespace) -> list[JobConfig]:
     ensemble_sizes = [int(x) for x in args.ensemble_sizes.split()]
     gradient_weights = [float(x) for x in args.gradient_weights.split()]
     gd_steps_list = [int(x) for x in args.num_gd_steps.split()]
+    bounds = [float(x) for x in args.asynchronous_diffusion_bounds.split()]
+    parameters = args.asynchronous_diffusion_parameter
+    shutoff = args.asynchronous_diffusion_shutoff
 
     for protein in proteins:
-        structure = protein.structure
-        density = str(protein.density)
-        resolution = protein.resolution
-        protein_name = protein.name
+        method_suffix = (
+            f"_{args.method.replace(' ', '_')}" if args.method else ""
+        )
 
-        method_suffix = f"_{args.method.replace(' ', '_')}" if args.method else ""
         for scaler in scalers:
-            if scaler == GuidanceType.FK_STEERING:
-                for ens in ensemble_sizes:
-                    for gw in gradient_weights:
-                        for gd in gd_steps_list:
+            is_fk = scaler == GuidanceType.FK_STEERING
+            gd_values = gd_steps_list if is_fk else [1]
+
+            for ens in ensemble_sizes:
+                for gw in gradient_weights:
+                    for gd in gd_values:
+                        for bound in bounds:
+                            trial_name = f"ens{ens}_gw{gw}"
+                            if is_fk:
+                                trial_name += f"_gd{gd}"
+
+                            trial_name += (
+                                f"_asynch-{"-".join(parameters) if parameters else "none"}"
+                                f"_bound{bound}"
+                                f"_shutoff{int(shutoff)}"
+                            )
+
                             output_dir = os.path.join(
                                 args.output_dir,
-                                protein_name,
+                                protein.name,
                                 f"{model}{method_suffix}",
                                 scaler,
-                                f"ens{ens}_gw{gw}_gd{gd}",
+                                trial_name,
                             )
-                            log_path = os.path.join(output_dir, "run.log")
+
                             jobs.append(
                                 JobConfig(
-                                    protein=protein_name,
-                                    structure_path=structure,
-                                    density_path=density,
-                                    resolution=resolution,
+                                    protein=protein.name,
+                                    structure_path=protein.structure,
+                                    density_path=str(protein.density),
+                                    resolution=protein.resolution,
                                     model_name=model,
                                     scaler=scaler,
                                     ensemble_size=ens,
@@ -604,38 +632,20 @@ def generate_jobs(args: argparse.Namespace) -> list[JobConfig]:
                                     gd_steps=gd,
                                     method=args.method,
                                     output_dir=output_dir,
-                                    log_path=log_path,
+                                    log_path=os.path.join(
+                                        output_dir, "run.log"
+                                    ),
                                     sequence=protein.sequence,
+                                    asynchronous_diffusion_parameter=(
+                                        list(parameters)
+                                        if parameters is not None
+                                        else None
+                                    ),
+                                    asynchronous_diffusion_bound=bound,
+                                    asynchronous_diffusion_shutoff=shutoff,
+                                    flexibility_prior=protein.flexibility_prior, #TODO: remove
                                 )
                             )
-            else:
-                for ens in ensemble_sizes:
-                    for gw in gradient_weights:
-                        output_dir = os.path.join(
-                            args.output_dir,
-                            protein_name,
-                            f"{model}{method_suffix}",
-                            scaler,
-                            f"ens{ens}_gw{gw}",
-                        )
-                        log_path = os.path.join(output_dir, "run.log")
-                        jobs.append(
-                            JobConfig(
-                                protein=protein_name,
-                                structure_path=structure,
-                                density_path=density,
-                                resolution=resolution,
-                                model_name=model,
-                                scaler=scaler,
-                                ensemble_size=ens,
-                                gradient_weight=gw,
-                                gd_steps=1,
-                                method=args.method,
-                                output_dir=output_dir,
-                                log_path=log_path,
-                                sequence=protein.sequence,
-                            )
-                        )
 
     return jobs
 
@@ -672,6 +682,9 @@ def save_results(
             r.ensemble_size,
             r.gradient_weight,
             r.gd_steps,
+            tuple(r.asynchronous_diffusion_parameter or ()),
+            r.asynchronous_diffusion_bound,
+            r.asynchronous_diffusion_shutoff,
         )
         for r in results
     }
@@ -689,6 +702,9 @@ def save_results(
             normalized_run.get("ensemble_size"),
             normalized_run.get("gradient_weight"),
             normalized_run.get("gd_steps"),
+            tuple(normalized_run.get("asynchronous_diffusion_parameter") or ()),
+            normalized_run.get("asynchronous_diffusion_bound"),
+            normalized_run.get("asynchronous_diffusion_shutoff", False),
         )
         if key not in new_run_keys:
             merged_runs.append(normalized_run)
@@ -862,6 +878,28 @@ def parse_args() -> argparse.Namespace:
         "--only-missing",
         action="store_true",
         help="Run only un-run jobs, skip failed and successful jobs",
+    )
+
+    # Asynchronous diffusion arguments
+    # Asynchronous diffusion: fixed settings plus a bound sweep.
+    parser.add_argument(
+        "--asynchronous-diffusion-parameter",
+        type=str,
+        choices=["noise_scale", "step_scale", "guidance_weight"],
+        nargs="+",
+        default=None,
+        help="Parameters to apply asynchronous diffusion to together.",
+    )
+    parser.add_argument(
+        "--asynchronous-diffusion-bounds",
+        type=str,
+        default="0.0",
+        help="Space-separated asynchronous diffusion bounds to sweep.",
+    )
+    parser.add_argument(
+        "--asynchronous-diffusion-shutoff",
+        action="store_true",
+        help="Restore asynchronous parameters after churn shutoff.",
     )
 
     return parser.parse_args()

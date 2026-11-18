@@ -3,7 +3,10 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
-from sampleworks.utils.sequence import resolve_sequence_arg
+from sampleworks.utils.sequence import (
+    resolve_sequence_arg, 
+    resolve_flexibility_prior_arg
+)
 
 
 @dataclass
@@ -39,6 +42,7 @@ class ProteinInput:
     density: Path
     resolution: float
     sequence: str | None = None
+    flexibility_prior: list[float] | None = None #TODO: remove
 
     def __post_init__(self):
         self.structure = Path(self.structure)
@@ -90,6 +94,7 @@ class ProteinInput:
                 density_raw = (row.get("density") or "").strip()
                 resolution_raw = (row.get("resolution") or "").strip()
                 sequence_raw = (row.get("sequence") or "").strip()
+                flexibility_prior_raw = (row.get("flexibility_prior") or "").strip()
 
                 structure = Path(structure_raw)
                 if not structure.is_absolute():
@@ -111,6 +116,21 @@ class ProteinInput:
 
                 sequence = resolve_sequence_arg(sequence_raw, csv_dir)
 
+                # TODO: remove
+                flexibility_prior = None
+                if flexibility_prior_raw:
+                    prior_path = Path(flexibility_prior_raw).expanduser()
+                    if not prior_path.is_absolute():
+                        prior_path = csv_dir / prior_path
+
+                    try:
+                        flexibility_prior = resolve_flexibility_prior_arg(str(prior_path))
+                    except (OSError, ValueError) as err:
+                        raise ValueError(
+                            f"Row {row_idx}: invalid flexibility_prior for "
+                            f"protein '{name}': {prior_path}"
+                        ) from err
+
                 protein_inputs.append(
                     cls(
                         name=name,
@@ -118,6 +138,7 @@ class ProteinInput:
                         density=density,
                         resolution=resolution,
                         sequence=sequence,
+                        flexibility_prior=flexibility_prior, #TODO: remove
                     )
                 )
 

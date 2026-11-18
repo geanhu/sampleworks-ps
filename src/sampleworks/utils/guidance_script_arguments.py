@@ -1035,6 +1035,9 @@ class JobResult:
     finished_at: str
     log_path: str
     output_dir: str
+    asynchronous_diffusion_parameter: list[str] | None = None
+    asynchronous_diffusion_bound: float | None = None
+    asynchronous_diffusion_shutoff: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         """Return a dictionary representation of the job result.
