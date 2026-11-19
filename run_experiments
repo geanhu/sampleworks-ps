@@ -248,7 +248,7 @@ export PYTHONPATH="$repo_root/src${PYTHONPATH:+:$PYTHONPATH}"
 export PIXI_CACHE_DIR="${PIXI_CACHE_DIR:-/tmp/pixi-cache}"
 export UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}"
 
-shared_checkpoint_dir="/mnt/diffuse-shared/raw/checkpoints"
+shared_checkpoint_dir="${SAMPLEWORKS_CHECKPOINT_DIR:-/mnt/diffuse-shared/raw/checkpoints}"
 for checkpoint_var_and_file in \
     "BOLTZ1_CHECKPOINT boltz1_conf.ckpt" \
     "BOLTZ2_CHECKPOINT boltz2_conf.ckpt" \
